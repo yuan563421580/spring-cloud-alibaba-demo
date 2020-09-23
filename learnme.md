@@ -1,6 +1,10 @@
-基础：在本地启动nacos，本次环节测试使用1.3.0
-    访问地址：http://127.0.0.1:8848/nacos/index.html
-    用户名/密码 ： nacos/nacos
+外部服务1：在本地启动nacos，本次学习环节测试使用1.3.0
+            访问地址：http://127.0.0.1:8848/nacos/index.html
+            用户名/密码 ： nacos/nacos
+外部服务2：在本地启动sentinel，本次学习环节测试使用1.8.0
+            访问地址：http://localhost:8888/#/login
+            用户名/密码 ： sentinel/sentinel
+---------------------------------------------------------------------------------------
 一、创建工程：spring-cloud-alibaba-demo
     1.删除 src 文件夹
     2.在pom.xml中设置父类工程为pom方式 : <packaging>pom</packaging>
@@ -363,5 +367,67 @@
                 hello nacos provider, i am from port: 8077
                 hello nacos provider, i am from port: 8076
         02).暂时不需要进行其他测试
+八、创建服务消费者模块（Feign）, Sentinel 客户端接入,使用本地配置文件：server-consumer-sentinel
+    1.在pom.xml中配置 Nacos的服务注册与发现模块 、 OpenFeign 和 Sentinel
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-web</artifactId>
+            </dependency>
+            <!-- 健康监控 -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-actuator</artifactId>
+            </dependency>
+            <!-- Nacos的服务注册与发现模块 -->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+            </dependency>
+            <!-- Spring Cloud OpenFeign 用于Spring Boot应用程序的声明式REST客户端 -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-starter-openfeign</artifactId>
+            </dependency>
+            <!-- Alibaba Sentinel 用于以流量为切入点，从流量控制、熔断降级、系统负载保护等 -->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+            </dependency>
+        </dependencies>
+    2.创建配置文件：application.yml , 拷贝 server-consumer-feign 模块的配置文件进行修改
+        配置 服务注册中心 和 熔断限流
+            spring:
+              application:
+                # 服务名
+                name: server-consumer-feign
+              cloud:
+                nacos:
+                  discovery:
+                    server-addr: 127.0.0.1:8848
+                sentinel:
+                  transport:
+                    dashboard: 127.0.0.1:8888
+        配置 开启 Feign 对 Sentinel 的支持
+            feign:
+              sentinel:
+                enabled: true
+    3.编写创建启动类：ServerConsumerSentinelApplication, 拷贝 server-consumer-feign 模块的启动类
+            通过 Spring Cloud 原生注解 @EnableDiscoveryClient 开启服务注册发现功能
+            通过 @EnableFeignClients 注解开启 Feign 功能
+    4.拷贝 server-consumer-feign 中的 service 和 controller
+    5.在 fallback 文件夹下创建熔断类：ServerConsumerServiceFallback
+        增加 @Component 注解 、 实现 ServerConsumerService 接口
+    6.修改 ServerConsumerService 类
+        注解 @FeignClient 增加 fallback 属性指定熔断类
+    7.启动工程，进行本环节测试
+        01).打开浏览器访问：http://127.0.0.1:8183/consumer/feign/hello， 查看 
+            刷新2次，返回结果正确（负载均衡测试通过） ： 
+            hello nacos provider, i am from port: 8070
+            hello nacos provider, i am from port: 8071
+        02).打开浏览器访问：http://127.0.0.1:8183/consumer/feign/echo/fail， 查看 
+            返回结果正确（熔断降级测试通过） ： echo fallback
+        03).停止 provider 服务， 打开浏览器访问：http://127.0.0.1:8183/consumer/feign/hello， 查看 
+            返回结果正确（熔断降级测试通过） ： hello fallback
 --------------
 com.yuansb.demo

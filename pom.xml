@@ -15,6 +15,7 @@
         <module>server-consumer-feign</module>
         <module>server-consumer-config</module>
         <module>server-provider-config</module>
+        <module>server-consumer-sentinel</module>
     </modules>
 
     <groupId>com.yuansb</groupId>
