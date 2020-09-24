@@ -400,7 +400,7 @@
             spring:
               application:
                 # 服务名
-                name: server-consumer-feign
+                name: server-consumer-feign-sentinel
               cloud:
                 nacos:
                   discovery:
@@ -429,5 +429,132 @@
             返回结果正确（熔断降级测试通过） ： echo fallback
         03).停止 provider 服务， 打开浏览器访问：http://127.0.0.1:8183/consumer/feign/hello， 查看 
             返回结果正确（熔断降级测试通过） ： hello fallback
---------------
+    -说明：实际可以在 nacos 进行 application.yml 配置
+九、创建网关服务模块：server-gateway
+    1.在pom.xml中配置 Nacos的服务注册与发现模块 、 gateway 和 Servlet 支持
+        <dependencies>
+            <!-- 健康监控 -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-actuator</artifactId>
+            </dependency>
+            <!-- Nacos的服务注册与发现模块 -->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+            </dependency>
+            <!-- Spring Cloud OpenFeign 用于Spring Boot应用程序的声明式REST客户端 -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-starter-openfeign</artifactId>
+            </dependency>
+            <!-- Alibaba Sentinel 用于以流量为切入点，从流量控制、熔断降级、系统负载保护等 -->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+            </dependency>
+            <!-- 网关服务 -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-starter-gateway</artifactId>
+            </dependency>
+            <!-- Servlet 支持 -->
+            <dependency>
+                <groupId>javax.servlet</groupId>
+                <artifactId>javax.servlet-api</artifactId>
+            </dependency>
+        </dependencies>
+    -说明：Spring Cloud Gateway 不使用 Web 作为服务器，而是使用 WebFlux 作为服务器，
+            Gateway 项目已经依赖了 starter-webflux ， 所以这里千万不要依赖 starter-web 。
+            由于过滤器等功能依然需要 Servlet 支持，故这里还需要依赖 javax.servlet:javax.servlet-api 。
+    2.创建配置文件：application.yml
+        spring:
+          application:
+            # 应用名称
+            name: server-gateway
+          cloud:
+            # 使用 Nacos 作为服务注册发现
+            nacos:
+              discovery:
+                server-addr: 127.0.0.1:8848
+            # 使用 Sentinel 作为熔断器
+            sentinel:
+              transport:
+                dashboard: 127.0.0.1:8888
+            # 路由网关配置
+            gateway:
+              # 设置与服务注册发现组件结合，这样可以采用服务名的路由策略
+              discovery:
+                locator:
+                  enabled: true
+              # 配置路由规则
+              routes:
+                # 采用自定义路由 ID（有固定用法，不同的 id 有不同的功能，详见：https://cloud.spring.io/spring-cloud-gateway/2.0.x/single/spring-cloud-gateway.html#gateway-route-filters）
+                - id: SERVER-CONSUMER-FEIGN
+                  # 采用 LoadBalanceClient 方式请求，以 lb:// 开头，后面的是注册在 Nacos 上的服务名
+                  uri: lb://server-consumer-feign
+                  # Predicate 翻译过来是“谓词”的意思，必须，主要作用是匹配用户的请求，有很多种用法
+                  predicates:
+                    # Method 方法谓词，这里是匹配 GET 和 POST 请求
+                    - Method=GET,POST 
+    3.编写创建启动类：ServerGatewayApplication
+        通过 Spring Cloud 原生注解 @EnableDiscoveryClient 开启服务注册发现功能
+        通过 @EnableFeignClients 注解开启 Feign 功能
+    4.启动工程，进行本环节测试
+        打开浏览器访问：http://127.0.0.1:9000/server-consumer-feign/consumer/feign/hello， 查看
+            刷新2次，返回结果正确（负载均衡测试通过） ： 
+            hello nacos provider, i am from port: 8070
+            hello nacos provider, i am from port: 8071
+    5.修改application.yml
+        修改配置路由规则相关部分：增加 predicates.Path 和 filters.StripPrefix
+              # 配置路由规则
+              routes:
+                # 采用自定义路由 ID（有固定用法，不同的 id 有不同的功能，详见：https://cloud.spring.io/spring-cloud-gateway/2.0.x/single/spring-cloud-gateway.html#gateway-route-filters）
+                - id: SERVER-CONSUMER-FEIGN
+                  # 采用 LoadBalanceClient 方式请求，以 lb:// 开头，后面的是注册在 Nacos 上的服务名
+                  uri: lb://server-consumer-feign
+                  # Predicate 翻译过来是“谓词”的意思，必须，主要作用是匹配用户的请求，有很多种用法
+                  predicates:
+                    # Method 方法谓词，这里是匹配 GET 和 POST 请求
+                    - Method=GET,POST
+                    # 路径匹配，以 api 开头，直接配置是不生效的，看 filters 配置
+                    - Path=/api/**
+                  filters:
+                    # 前缀过滤，默认配置下，我们的请求路径是 http://localhost:9000/server-consumer-feign/** 这时会路由到指定的服务
+                    # 此处配置去掉 1 个路径前缀，再配置上面的 Path=/api/**，就能按照 http://localhost:9000/api/** 的方式访问了
+                    - StripPrefix=1
+    6.重新启动工程，进行本环节测试
+        打开浏览器访问：http://127.0.0.1:9000/api/consumer/feign/hello， 查看
+            刷新2次，返回结果正确（负载均衡测试通过） ： 
+            hello nacos provider, i am from port: 8070
+            hello nacos provider, i am from port: 8071
+    7.修改application.yml
+        配置路由规则再增加一个id : SERVER-CONSUMER-FEIGN-SENTINEL
+              routes:
+                # 采用自定义路由 ID（有固定用法，不同的 id 有不同的功能，详见：https://cloud.spring.io/spring-cloud-gateway/2.0.x/single/spring-cloud-gateway.html#gateway-route-filters）
+                - id: SERVER-CONSUMER-FEIGN
+                  # 采用 LoadBalanceClient 方式请求，以 lb:// 开头，后面的是注册在 Nacos 上的服务名
+                  uri: lb://server-consumer-feign
+                  # Predicate 翻译过来是“谓词”的意思，必须，主要作用是匹配用户的请求，有很多种用法
+                  predicates:
+                    # Method 方法谓词，这里是匹配 GET 和 POST 请求
+                    - Method=GET,POST
+                    # 路径匹配，以 api 开头，直接配置是不生效的，看 filters 配置
+                    - Path=/api/**
+                  filters:
+                    # 前缀过滤，默认配置下，我们的请求路径是 http://localhost:9000/server-consumer-feign/** 这时会路由到指定的服务
+                    # 此处配置去掉 1 个路径前缀，再配置上面的 Path=/api/**，就能按照 http://localhost:9000/api/** 的方式访问了
+                    - StripPrefix=1
+                - id: SERVER-CONSUMER-FEIGN-SENTINEL
+                  uri: lb://server-consumer-feign-sentinel
+                  predicates:
+                    - Path=/business/**
+                  filters:
+                    - StripPrefix=1
+    8.重新启动工程，进行本环节测试
+        01).重复步骤6，测试通过
+        02).打开浏览器访问：http://127.0.0.1:9000/business/consumer/feign/hello， 查看
+            返回结果正确 ： hello nacos provider, i am from port: 8071
+    -说明：实际可以在 nacos 进行 application.yml 配置
+---------------------------------------------------------------------------------------
 com.yuansb.demo

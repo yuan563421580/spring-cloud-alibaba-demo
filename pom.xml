@@ -16,6 +16,7 @@
         <module>server-consumer-config</module>
         <module>server-provider-config</module>
         <module>server-consumer-sentinel</module>
+        <module>server-gateway</module>
     </modules>
 
     <groupId>com.yuansb</groupId>
